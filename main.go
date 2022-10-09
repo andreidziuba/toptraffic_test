@@ -120,7 +120,7 @@ func request_adverising_partners(rw http.ResponseWriter, ap []IPORT, pr placemen
 				panic(4)
 			}
 			r := bytes.NewReader(b)
-			resp, err := client.Post(iport.to_url(), "application/json", r)
+			resp, err := client.Post(iport.to_url("bid_request"), "application/json", r)
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -260,7 +260,7 @@ type imp_bid_response struct {
 	Height uint    `json:"height"`
 	Title  string  `json:"title"`
 	Url    string  `json:"url"`
-	Price  float64 `json:"price"`
+	Price  float64 `json:"price,string"`
 }
 
 //	{
@@ -295,6 +295,9 @@ func (iport *IPORT) to_string() string {
 	return fmt.Sprintf("%s:%s", iport.IP.String(), strconv.FormatUint(uint64(iport.port), 10))
 }
 
-func (iport *IPORT) to_url() string {
+func (iport *IPORT) to_url(a string) string {
+	if a != "" {
+		return fmt.Sprintf("http://%s/%s", iport.to_string(), a)
+	}
 	return fmt.Sprintf("http://%s", iport.to_string())
 }

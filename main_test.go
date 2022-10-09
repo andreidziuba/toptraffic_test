@@ -9,9 +9,7 @@ import (
 	"testing"
 )
 
-func TestCheckHandler(t *testing.T) {
-	// Создаем запрос с указанием нашего хендлера. Нам не нужно
-	// указывать параметры, поэтому вторым аргументом передаем nil
+func TestHandler(t *testing.T) {
 	r := placements_request{
 		Id: "780",
 		Tiles: []tiles{tiles{
@@ -30,19 +28,18 @@ func TestCheckHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Мы создаем ResponseRecorder(реализует интерфейс http.ResponseWriter)
-	// и используем его для получения ответа
 	rr := httptest.NewRecorder()
 	ap := make([]IPORT, 0)
 	ap = append(ap, IPORT{
-		IP:   []byte{192, 168, 9, 9},
-		port: 1900,
+		IP:   []byte{127, 0, 0, 1},
+		port: 8000,
+	})
+	ap = append(ap, IPORT{
+		IP:   []byte{127, 0, 0, 1},
+		port: 8001,
 	})
 	handler := http.HandlerFunc(NewHandleFunc(ap))
 
-	// Наш хендлер соответствует интерфейсу http.Handler, а значит
-	// мы можем использовать ServeHTTP и напрямую указать
-	// Request и ResponseRecorder
 	handler.ServeHTTP(rr, req)
 	fmt.Println(rr.Body)
 }
