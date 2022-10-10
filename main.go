@@ -77,9 +77,31 @@ func NewHandleFunc(ap []IPORT) func(http.ResponseWriter, *http.Request) {
 			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Context' в JSON", http.StatusBadRequest)
 			return
 		}
+		if json_request.Context.Ip == "" {
+			http.Error(rw, "(EMPTY_TILES) Нет поля 'ip' в Context", http.StatusBadRequest)
+			return
+		}
+		if json_request.Context.User_agent == "" {
+			http.Error(rw, "(EMPTY_TILES) Нет поля 'User_agent' в Context", http.StatusBadRequest)
+			return
+		}
 
-		// TODO надо сделать также проверку полей в Context и Tiles
+		// TODO надо сделать проверку полей в Context и Tiles
 		// сделать свои поля по умолчанию для анмаршалинга и потом проверять на дефолтные значения.
+		for _, tile := range json_request.Tiles {
+			if tile.Id == 0 {
+				http.Error(rw, "(EMPTY_TILES) Нет поля 'Id' в Tile", http.StatusBadRequest)
+				return
+			}
+			if tile.Ratio == 0 {
+				http.Error(rw, "(EMPTY_TILES) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				return
+			}
+			if tile.Width == 0 {
+				http.Error(rw, "(EMPTY_TILES) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				return
+			}
+		}
 
 		if len(json_request.Tiles) == 0 {
 			http.Error(rw, "(EMPTY_TILES) Отстуствуют tiles", http.StatusBadRequest)
