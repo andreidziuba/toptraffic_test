@@ -44,7 +44,7 @@ func TestHandler(t *testing.T) {
 		IP:   []byte{127, 0, 0, 1},
 		port: 8001,
 	})
-	handler := http.HandlerFunc(NewHandleFunc(ap))
+	handler := http.HandlerFunc(NewHandleFunc(&ap))
 
 	handler.ServeHTTP(rr, req)
 	fmt.Println(rr.Body)
