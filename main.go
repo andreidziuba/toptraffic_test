@@ -27,20 +27,20 @@ func main() {
 		os.Exit(2)
 	}
 	//Парсим адреса рекламных партнёров
-	for _, a := range strings.Split(*advertising_partners_string, ",") {
-		a_split := strings.Split(a, ":")
-		p, err := strconv.ParseUint(strings.Trim(a_split[1], " "), 10, 64)
+	for _, ap_string := range strings.Split(*advertising_partners_string, ",") {
+		ap_split_ip_port := strings.Split(ap_string, ":")
+		p, err := strconv.ParseUint(strings.Trim(ap_split_ip_port[1], " "), 10, 64)
 		if err != nil || p < 1 || p > 65535 {
-			fmt.Println("port не явлется числом от 1 до 65535: ", a)
+			fmt.Println("port не явлется числом от 1 до 65535: ", ap_string)
 			os.Exit(3)
 		}
 		ap_port := uint16(p)
-		parse_ip := net.ParseIP(strings.Trim(a_split[0], " "))
-		if parse_ip == nil {
-			fmt.Println("Неверный ip", a_split[0])
+		ap_parsed_ip := net.ParseIP(strings.Trim(ap_split_ip_port[0], " "))
+		if ap_parsed_ip == nil {
+			fmt.Println("Неверный ip", ap_split_ip_port[0])
 			os.Exit(3)
 		}
-		advertising_partners = append(advertising_partners, IPORT{parse_ip, ap_port})
+		advertising_partners = append(advertising_partners, IPORT{ap_parsed_ip, ap_port})
 		if len(advertising_partners) > 10 {
 			fmt.Println("Рекламных партнёров больше 10")
 		}
@@ -78,11 +78,11 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 		if json_request.Context.Ip == "" {
-			http.Error(rw, "(EMPTY_TILES) Нет поля 'ip' в Context", http.StatusBadRequest)
+			http.Error(rw, "(EMPTY_FIELD) Нет поля 'ip' в Context", http.StatusBadRequest)
 			return
 		}
 		if json_request.Context.User_agent == "" {
-			http.Error(rw, "(EMPTY_TILES) Нет поля 'User_agent' в Context", http.StatusBadRequest)
+			http.Error(rw, "(EMPTY_FIELD) Нет поля 'User_agent' в Context", http.StatusBadRequest)
 			return
 		}
 
@@ -90,15 +90,15 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 		// сделать свои поля по умолчанию для анмаршалинга и потом проверять на дефолтные значения.
 		for _, tile := range json_request.Tiles {
 			if tile.Id == 0 {
-				http.Error(rw, "(EMPTY_TILES) Нет поля 'Id' в Tile", http.StatusBadRequest)
+				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Id' в Tile", http.StatusBadRequest)
 				return
 			}
 			if tile.Ratio == 0 {
-				http.Error(rw, "(EMPTY_TILES) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
 				return
 			}
 			if tile.Width == 0 {
-				http.Error(rw, "(EMPTY_TILES) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
 				return
 			}
 		}
@@ -118,7 +118,7 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 }
 
 func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placements_request) {
-	breq := bid_request{Id: pr.Id, Context: pr.Context}
+	bid_req := bid_request{Id: pr.Id, Context: pr.Context}
 
 	for _, tiles := range pr.Tiles {
 		ir := imp_request{
@@ -126,17 +126,16 @@ func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placem
 			Minwidth:  tiles.Width,
 			Minheight: uint(math.Floor(float64(tiles.Width) * tiles.Ratio)),
 		}
-		breq.Imp = append(breq.Imp, ir)
+		bid_req.Imp = append(bid_req.Imp, ir)
 	}
 	resp_chan := make(chan bid_response, 20)
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: 200 * time.Millisecond}
+	client := &http.Client{Timeout: 200 * time.Millisecond}
 	var ap_wg sync.WaitGroup
 	for _, iport := range *ap {
 		ap_wg.Add(1)
 		go func(iport IPORT) {
 			defer ap_wg.Done()
-			b, err := json.Marshal(breq)
+			b, err := json.Marshal(bid_req)
 			if err != nil {
 				fmt.Println("Error marshal:", err)
 				panic(4)
@@ -174,7 +173,7 @@ func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placem
 		}
 	}
 	pl_re := placements_response{
-		Id: breq.Id,
+		Id: bid_req.Id,
 	}
 	for _, a := range pr.Tiles {
 		temp_imp, ok := imp_bid_responses[a.Id]
