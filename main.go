@@ -49,7 +49,7 @@ func main() {
 			os.Exit(3)
 		}
 	}
-	http.HandleFunc("/placements/request", NewHandleFunc(advertising_partners))
+	http.HandleFunc("/placements/request", NewHandleFunc(&advertising_partners))
 	err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *port), nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
@@ -59,7 +59,7 @@ func main() {
 	}
 }
 
-func NewHandleFunc(ap []IPORT) func(http.ResponseWriter, *http.Request) {
+func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		dec := json.NewDecoder(req.Body)
 		dec.DisallowUnknownFields()
@@ -113,11 +113,11 @@ func NewHandleFunc(ap []IPORT) func(http.ResponseWriter, *http.Request) {
 		// 	return
 		// }
 
-		request_adverising_partners(rw, ap, json_request)
+		request_adverising_partners(rw, ap, &json_request)
 	}
 }
 
-func request_adverising_partners(rw http.ResponseWriter, ap []IPORT, pr placements_request) {
+func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placements_request) {
 	breq := bid_request{Id: pr.Id, Context: pr.Context}
 
 	for _, tiles := range pr.Tiles {
@@ -132,7 +132,7 @@ func request_adverising_partners(rw http.ResponseWriter, ap []IPORT, pr placemen
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: 200 * time.Millisecond}
 	var ap_wg sync.WaitGroup
-	for _, iport := range ap {
+	for _, iport := range *ap {
 		ap_wg.Add(1)
 		go func(iport IPORT) {
 			defer ap_wg.Done()
