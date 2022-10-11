@@ -17,39 +17,8 @@ import (
 )
 
 func main() {
-	port := flag.Int("p", -1, "port: 1-65535")
-	advertising_partners_string := flag.String("d", "", "ip:port,ip:port,... [1-10]")
-	advertising_partners := make([]IPORT, 0, 10)
-
-	flag.Parse()
-	if *port < 1 || *port > 65535 {
-		fmt.Println("Port (flag -p) должен быть в пределах 1-65535")
-		os.Exit(2)
-	}
-	//Парсим адреса рекламных партнёров
-	for _, ap_string := range strings.Split(*advertising_partners_string, ",") {
-		ap_split_ip_port := strings.Split(ap_string, ":")
-		p, err := strconv.ParseUint(strings.Trim(ap_split_ip_port[1], " "), 10, 64)
-		if err != nil || p < 1 || p > 65535 {
-			fmt.Println("port не явлется числом от 1 до 65535: ", ap_string)
-			os.Exit(3)
-		}
-		ap_port := uint16(p)
-		ap_parsed_ip := net.ParseIP(strings.Trim(ap_split_ip_port[0], " "))
-		if ap_parsed_ip == nil {
-			fmt.Println("Неверный ip", ap_split_ip_port[0])
-			os.Exit(3)
-		}
-		advertising_partners = append(advertising_partners, IPORT{ap_parsed_ip, ap_port})
-		if len(advertising_partners) > 10 {
-			fmt.Println("Рекламных партнёров больше 10")
-		}
-		if len(advertising_partners) < 1 {
-			fmt.Println("Рекламных партнёров меньше 1")
-			os.Exit(3)
-		}
-	}
-	http.HandleFunc("/placements/request", NewHandleFunc(&advertising_partners))
+	port, advertisingPartners := flagsParse()
+	http.HandleFunc("/placements/request", NewHandleFunc(advertisingPartners))
 	err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *port), nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
@@ -59,36 +28,72 @@ func main() {
 	}
 }
 
+func flagsParse() (*int, *[]IPORT) {
+	port := flag.Int("p", -1, "port: 1-65535")
+	advertisingPartnersString := flag.String("d", "", "ip:port,ip:port,... [1-10]")
+	advertisingPartners := make([]IPORT, 0, 10)
+
+	flag.Parse()
+	if *port < 1 || *port > 65535 {
+		fmt.Println("Port (flag -p) должен быть в пределах 1-65535")
+		os.Exit(2)
+	}
+	//Парсим адреса рекламных партнёров
+	for _, apString := range strings.Split(*advertisingPartnersString, ",") {
+		apSplitIpPort := strings.Split(apString, ":")
+		p, err := strconv.ParseUint(strings.Trim(apSplitIpPort[1], " "), 10, 64)
+		if err != nil || p < 1 || p > 65535 {
+			fmt.Println("port не явлется числом от 1 до 65535: ", apString)
+			os.Exit(3)
+		}
+		apPort := uint16(p)
+		apParsedIp := net.ParseIP(strings.Trim(apSplitIpPort[0], " "))
+		if apParsedIp == nil {
+			fmt.Println("Неверный ip", apSplitIpPort[0])
+			os.Exit(3)
+		}
+		advertisingPartners = append(advertisingPartners, IPORT{apParsedIp, apPort})
+		if len(advertisingPartners) > 10 {
+			fmt.Println("Рекламных партнёров больше 10")
+		}
+		if len(advertisingPartners) < 1 {
+			fmt.Println("Рекламных партнёров меньше 1")
+			os.Exit(3)
+		}
+	}
+	return port, &advertisingPartners
+}
+
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		dec := json.NewDecoder(req.Body)
 		dec.DisallowUnknownFields()
-		json_request := placements_request{}
-		err := dec.Decode(&json_request)
+		jsonRequest := placementsRequest{}
+		err := dec.Decode(&jsonRequest)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if json_request.Id == "" {
+		if jsonRequest.Id == "" {
 			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Id' в JSON", http.StatusBadRequest)
 			return
 		}
-		if json_request.Context == (context{}) {
+		if jsonRequest.Context == (context{}) {
 			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Context' в JSON", http.StatusBadRequest)
 			return
 		}
-		if json_request.Context.Ip == "" {
+		if jsonRequest.Context.Ip == "" {
 			http.Error(rw, "(EMPTY_FIELD) Нет поля 'ip' в Context", http.StatusBadRequest)
 			return
 		}
-		if json_request.Context.User_agent == "" {
+		if jsonRequest.Context.UserAgent == "" {
 			http.Error(rw, "(EMPTY_FIELD) Нет поля 'User_agent' в Context", http.StatusBadRequest)
 			return
 		}
 
 		// TODO надо сделать проверку полей в Context и Tiles
 		// сделать свои поля по умолчанию для анмаршалинга и потом проверять на дефолтные значения.
-		for _, tile := range json_request.Tiles {
+		for _, tile := range jsonRequest.Tiles {
 			if tile.Id == 0 {
 				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Id' в Tile", http.StatusBadRequest)
 				return
@@ -103,7 +108,7 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 			}
 		}
 
-		if len(json_request.Tiles) == 0 {
+		if len(jsonRequest.Tiles) == 0 {
 			http.Error(rw, "(EMPTY_TILES) Отстуствуют tiles", http.StatusBadRequest)
 			return
 		}
@@ -113,29 +118,29 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 		// 	return
 		// }
 
-		request_adverising_partners(rw, ap, &json_request)
+		requestAdvertisingPartners(rw, ap, &jsonRequest)
 	}
 }
 
-func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placements_request) {
-	bid_req := bid_request{Id: pr.Id, Context: pr.Context}
+func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) {
+	bidReq := bidRequest{Id: pr.Id, Context: pr.Context}
 
 	for _, tiles := range pr.Tiles {
-		ir := imp_request{
+		ir := impRequest{
 			Id:        tiles.Id,
 			Minwidth:  tiles.Width,
 			Minheight: uint(math.Floor(float64(tiles.Width) * tiles.Ratio)),
 		}
-		bid_req.Imp = append(bid_req.Imp, ir)
+		bidReq.Imp = append(bidReq.Imp, ir)
 	}
-	resp_chan := make(chan bid_response, 20)
+	respChan := make(chan bidResponse, 20)
 	client := &http.Client{Timeout: 200 * time.Millisecond}
-	var ap_wg sync.WaitGroup
-	for _, iport := range *ap {
-		ap_wg.Add(1)
+	var apWG sync.WaitGroup
+	for _, apIPORT := range *advertisingPartners {
+		apWG.Add(1)
 		go func(iport IPORT) {
-			defer ap_wg.Done()
-			b, err := json.Marshal(bid_req)
+			defer apWG.Done()
+			b, err := json.Marshal(bidReq)
 			if err != nil {
 				fmt.Println("Error marshal:", err)
 				panic(4)
@@ -150,52 +155,52 @@ func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placem
 			case 200:
 				dec := json.NewDecoder(resp.Body)
 				dec.DisallowUnknownFields()
-				json_request := bid_response{}
-				err := dec.Decode(&json_request)
+				jsonRequest := bidResponse{}
+				err := dec.Decode(&jsonRequest)
 				if err != nil {
 					fmt.Println("Error decode:", err)
 					panic(4)
 				}
-				resp_chan <- json_request
+				respChan <- jsonRequest
 			default:
 				fmt.Println(resp.StatusCode, "фигня какая-то")
 			}
-		}(iport)
+		}(apIPORT)
 	}
-	ap_wg.Wait()
-	close(resp_chan)
-	imp_bid_responses := make(map[uint]imp_bid_response)
-	for bresp := range resp_chan {
-		for _, imp := range bresp.Imp {
-			if imp_bid_responses[imp.Id].Price < imp.Price {
-				imp_bid_responses[imp.Id] = imp
+	apWG.Wait()
+	close(respChan)
+	impBidResponses := make(map[uint]impBidResponse)
+	for bidResp := range respChan {
+		for _, imp := range bidResp.Imp {
+			if impBidResponses[imp.Id].Price < imp.Price {
+				impBidResponses[imp.Id] = imp
 			}
 		}
 	}
-	pl_re := placements_response{
-		Id: bid_req.Id,
+	plRe := placementsResponse{
+		Id: bidReq.Id,
 	}
 	for _, a := range pr.Tiles {
-		temp_imp, ok := imp_bid_responses[a.Id]
+		tempImp, ok := impBidResponses[a.Id]
 		if !ok {
 			continue
 		}
-		imp_resp := imp_response{
-			Id:     temp_imp.Id,
-			Width:  temp_imp.Width,
-			Height: temp_imp.Height,
-			Title:  temp_imp.Title,
-			Url:    temp_imp.Url,
+		impResp := impResponse{
+			Id:     tempImp.Id,
+			Width:  tempImp.Width,
+			Height: tempImp.Height,
+			Title:  tempImp.Title,
+			Url:    tempImp.Url,
 		}
-		pl_re.Imp = append(pl_re.Imp, imp_resp)
+		plRe.Imp = append(plRe.Imp, impResp)
 	}
-	json_pl_re, err := json.Marshal(pl_re)
+	jsonPlRe, err := json.Marshal(plRe)
 	if err != nil {
 		fmt.Println("Error marshal:", err)
 
 	}
 	rw.Header().Set("Content-Type", "application/json")
-	rw.Write(json_pl_re)
+	rw.Write(jsonPlRe)
 }
 
 //	{
@@ -210,7 +215,7 @@ func request_adverising_partners(rw http.ResponseWriter, ap *[]IPORT, pr *placem
 //			"user_agent": <string>
 //		}
 //	}
-type placements_request struct {
+type placementsRequest struct {
 	Id      string  `json:"id"`
 	Tiles   []tiles `json:"tiles"`
 	Context context `json:"context"`
@@ -223,8 +228,8 @@ type tiles struct {
 }
 
 type context struct {
-	Ip         string `json:"ip"`
-	User_agent string `json:"user_agent"`
+	Ip        string `json:"ip"`
+	UserAgent string `json:"user_agent"`
 }
 
 // type string_ip struct {
@@ -247,13 +252,13 @@ type context struct {
 //			"user_agent": <string>
 //		}
 //	}
-type bid_request struct {
-	Id      string        `json:"id"`
-	Imp     []imp_request `json:"imp"`
-	Context context       `json:"context"`
+type bidRequest struct {
+	Id      string       `json:"id"`
+	Imp     []impRequest `json:"imp"`
+	Context context      `json:"context"`
 }
 
-type imp_request struct {
+type impRequest struct {
 	Id        uint `json:"id"`
 	Minwidth  uint `json:"minwidth"`
 	Minheight uint `json:"minheight"`
@@ -270,12 +275,12 @@ type imp_request struct {
 //			"price": <float>
 //			}, … ]
 //	}
-type bid_response struct {
-	Id  string             `json:"id"`
-	Imp []imp_bid_response `json:"imp"`
+type bidResponse struct {
+	Id  string           `json:"id"`
+	Imp []impBidResponse `json:"imp"`
 }
 
-type imp_bid_response struct {
+type impBidResponse struct {
 	Id     uint    `json:"id"`
 	Width  uint    `json:"width"`
 	Height uint    `json:"height"`
@@ -294,12 +299,12 @@ type imp_bid_response struct {
 //			"url": <string>
 //			}, … ]
 //	}
-type placements_response struct {
-	Id  string         `json:"id"`
-	Imp []imp_response `json:"imp"`
+type placementsResponse struct {
+	Id  string        `json:"id"`
+	Imp []impResponse `json:"imp"`
 }
 
-type imp_response struct {
+type impResponse struct {
 	Id     uint   `json:"id"`
 	Width  uint   `json:"width"`
 	Height uint   `json:"height"`
