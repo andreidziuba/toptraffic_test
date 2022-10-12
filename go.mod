@@ -1,4 +1,4 @@
-module toptraffic/test
+module github.com/andreidziuba/toptraffic_test
 
 go 1.19
 
