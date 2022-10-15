@@ -70,6 +70,7 @@ func flagsParse() (*int, *[]IPORT) {
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		dec := json.NewDecoder(req.Body)
+		defer req.Body.Close()
 		dec.DisallowUnknownFields()
 		jsonRequest := placementsRequest{}
 		err := dec.Decode(&jsonRequest)
@@ -154,6 +155,7 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 				fmt.Println(err)
 				return
 			}
+			defer resp.Body.Close()
 			switch resp.StatusCode {
 			case 200:
 				dec := json.NewDecoder(resp.Body)
