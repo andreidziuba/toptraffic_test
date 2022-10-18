@@ -34,15 +34,19 @@ func main() {
 func flagsParse() (*int, *[]IPORT) {
 	port_ref := flag.IntP("port", "p", -1, "port: 1-65535")
 	advertisingPartnersSlice := flag.StringSliceP("dsp", "d", make([]string, 0), "ip:port,ip:port,... [1-10]")
-	advertisingPartners := make([]IPORT, 0, 10)
 
 	flag.Parse()
-
 	if *port_ref < 1 || *port_ref > 65535 {
 		fmt.Println("Port (flag -p) должен быть в пределах 1-65535", *port_ref)
 		os.Exit(2)
 	}
-	//Парсим адреса рекламных партнёров
+	advertisingPartners := parseAdvertisingPartners(advertisingPartnersSlice)
+	return port_ref, advertisingPartners
+}
+
+// Парсим адреса рекламных партнёров
+func parseAdvertisingPartners(advertisingPartnersSlice *[]string) *[]IPORT {
+	advertisingPartners := make([]IPORT, 0, 10)
 	for _, apString := range *advertisingPartnersSlice {
 		apSplitIpPort := strings.Split(apString, ":")
 		p, err := strconv.ParseUint(strings.Trim(apSplitIpPort[1], " "), 10, 64)
@@ -65,7 +69,7 @@ func flagsParse() (*int, *[]IPORT) {
 			os.Exit(3)
 		}
 	}
-	return port_ref, &advertisingPartners
+	return &advertisingPartners
 }
 
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
@@ -92,7 +96,6 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 			log.Println("(WRONG_SCHEMA) Нет поля 'Id' в JSON")
 			return
 		}
-		fmt.Println("jsonRequest:", jsonRequest)
 		if jsonRequest.Context == (context{
 			Ip:        "**not_exist**",
 			UserAgent: "**not_exist**",
