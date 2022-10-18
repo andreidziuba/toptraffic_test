@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	flag "github.com/spf13/pflag"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -22,27 +23,27 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 func main() {
 	port, advertisingPartners := flagsParse()
 	http.HandleFunc("/placements/request", NewHandleFunc(advertisingPartners))
-	err := http.ListenAndServe(fmt.Sprintf("localhost:%d", *port), nil)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
-		fmt.Printf("error starting server: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("error starting server: %s\n", err)
 	}
 }
 
 func flagsParse() (*int, *[]IPORT) {
-	port := flag.Int("p", -1, "port: 1-65535")
-	advertisingPartnersString := flag.String("d", "", "ip:port,ip:port,... [1-10]")
+	port_ref := flag.IntP("port", "p", -1, "port: 1-65535")
+	advertisingPartnersSlice := flag.StringSliceP("dsp", "d", make([]string, 0), "ip:port,ip:port,... [1-10]")
 	advertisingPartners := make([]IPORT, 0, 10)
 
 	flag.Parse()
-	if *port < 1 || *port > 65535 {
-		fmt.Println("Port (flag -p) должен быть в пределах 1-65535")
+
+	if *port_ref < 1 || *port_ref > 65535 {
+		fmt.Println("Port (flag -p) должен быть в пределах 1-65535", *port_ref)
 		os.Exit(2)
 	}
 	//Парсим адреса рекламных партнёров
-	for _, apString := range strings.Split(*advertisingPartnersString, ",") {
+	for _, apString := range *advertisingPartnersSlice {
 		apSplitIpPort := strings.Split(apString, ":")
 		p, err := strconv.ParseUint(strings.Trim(apSplitIpPort[1], " "), 10, 64)
 		if err != nil || p < 1 || p > 65535 {
@@ -64,7 +65,7 @@ func flagsParse() (*int, *[]IPORT) {
 			os.Exit(3)
 		}
 	}
-	return port, &advertisingPartners
+	return port_ref, &advertisingPartners
 }
 
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
@@ -72,26 +73,42 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 		dec := json.NewDecoder(req.Body)
 		defer req.Body.Close()
 		dec.DisallowUnknownFields()
-		jsonRequest := placementsRequest{}
+		jsonRequest := placementsRequest{
+			Id:    "**not_exist**",
+			Tiles: []tiles{},
+			Context: context{
+				Ip:        "**not_exist**",
+				UserAgent: "**not_exist**",
+			},
+		}
 		err := dec.Decode(&jsonRequest)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusBadRequest)
+			log.Println("WRONG_SCHEMA")
 			return
 		}
-		if jsonRequest.Id == "" {
+		if jsonRequest.Id == "**not_exist**" {
 			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Id' в JSON", http.StatusBadRequest)
+			log.Println("(WRONG_SCHEMA) Нет поля 'Id' в JSON")
 			return
 		}
-		if jsonRequest.Context == (context{}) {
+		fmt.Println("jsonRequest:", jsonRequest)
+		if jsonRequest.Context == (context{
+			Ip:        "**not_exist**",
+			UserAgent: "**not_exist**",
+		}) {
 			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Context' в JSON", http.StatusBadRequest)
+			log.Println("(WRONG_SCHEMA) Нет поля 'Context' в JSON")
 			return
 		}
 		if jsonRequest.Context.Ip == "" {
 			http.Error(rw, "(EMPTY_FIELD) Нет поля 'ip' в Context", http.StatusBadRequest)
+			log.Println("(EMPTY_FIELD) Нет поля 'ip' в Context")
 			return
 		}
 		if jsonRequest.Context.UserAgent == "" {
 			http.Error(rw, "(EMPTY_FIELD) Нет поля 'User_agent' в Context", http.StatusBadRequest)
+			log.Println("(EMPTY_FIELD) Нет поля 'User_agent' в Context")
 			return
 		}
 
@@ -100,20 +117,24 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 		for _, tile := range jsonRequest.Tiles {
 			if tile.Id == 0 {
 				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Id' в Tile", http.StatusBadRequest)
+				log.Println("(EMPTY_FIELD) Нет поля 'Id' в Tile")
 				return
 			}
 			if tile.Ratio == 0 {
 				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				log.Println("(EMPTY_FIELD) Нет поля 'Ratio' в Tile")
 				return
 			}
 			if tile.Width == 0 {
-				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
+				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Width' в Tile", http.StatusBadRequest)
+				log.Println("(EMPTY_FIELD) Нет поля 'Width' в Tile")
 				return
 			}
 		}
 
 		if len(jsonRequest.Tiles) == 0 {
 			http.Error(rw, "(EMPTY_TILES) Отстуствуют tiles", http.StatusBadRequest)
+			log.Println("(EMPTY_TILES) Отстуствуют tiles")
 			return
 		}
 
@@ -167,6 +188,8 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 					panic(4)
 				}
 				respChan <- jsonRequest
+			case 204:
+				break
 			default:
 				fmt.Println(resp.StatusCode, "фигня какая-то")
 			}
@@ -291,7 +314,7 @@ type impBidResponse struct {
 	Height uint    `json:"height"`
 	Title  string  `json:"title"`
 	Url    string  `json:"url"`
-	Price  float64 `json:"price,string"`
+	Price  float64 `json:"price"`
 }
 
 //	{
