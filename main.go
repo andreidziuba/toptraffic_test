@@ -152,48 +152,34 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 
 func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) {
 	bidReq := prepareBidRequest(pr)
-	
+
 	respChan := make(chan bidResponse, 20)
 	client := &http.Client{Timeout: 200 * time.Millisecond}
 	var apWG sync.WaitGroup
 	for _, apIPORT := range *advertisingPartners {
 		apWG.Add(1)
-		go func(iport IPORT) {
-			defer apWG.Done()
-			b, err := json.Marshal(bidReq)
-			if err != nil {
-				fmt.Println("Error marshal:", err)
-				panic(4)
-			}
-			r := bytes.NewReader(b)
-			resp, err := client.Post(iport.to_url("bid_request"), "application/json", r)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			defer resp.Body.Close()
-			switch resp.StatusCode {
-			case 200:
-				dec := json.NewDecoder(resp.Body)
-				dec.DisallowUnknownFields()
-				jsonRequest := bidResponse{}
-				err := dec.Decode(&jsonRequest)
-				if err != nil {
-					fmt.Println("Error decode:", err)
-					panic(4)
-				}
-				respChan <- jsonRequest
-			case 204:
-				break
-			default:
-				fmt.Println(resp.StatusCode, "фигня какая-то")
-			}
-		}(apIPORT)
+		go requestAdvertisingPartner(&apWG, bidReq, client, respChan, apIPORT)
 	}
 	apWG.Wait()
 	close(respChan)
+
+	placementResponse(&respChan, bidReq, pr, rw)
+}
+
+func placementResponse(respChan *chan bidResponse, bidReq bidRequest, pr *placementsRequest, rw http.ResponseWriter) {
+	plRe := prepareBidResponse(respChan, &bidReq, pr)
+
+	jsonPlRe, err := json.Marshal(plRe)
+	if err != nil {
+		log.Println("Error marshal:", err)
+	}
+	rw.Header().Set("Content-Type", "application/json")
+	rw.Write(jsonPlRe)
+}
+
+func prepareBidResponse(respChan *chan bidResponse, bidReq *bidRequest, pr *placementsRequest) placementsResponse {
 	impBidResponses := make(map[uint]impBidResponse)
-	for bidResp := range respChan {
+	for bidResp := range *respChan {
 		for _, imp := range bidResp.Imp {
 			if impBidResponses[imp.Id].Price < imp.Price {
 				impBidResponses[imp.Id] = imp
@@ -217,13 +203,39 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 		}
 		plRe.Imp = append(plRe.Imp, impResp)
 	}
-	jsonPlRe, err := json.Marshal(plRe)
+	return plRe
+}
+
+func requestAdvertisingPartner(apWG *sync.WaitGroup, bidReq bidRequest, client *http.Client, respChan chan bidResponse, iport IPORT) {
+	defer apWG.Done()
+	b, err := json.Marshal(bidReq)
 	if err != nil {
 		fmt.Println("Error marshal:", err)
-
+		panic(4)
 	}
-	rw.Header().Set("Content-Type", "application/json")
-	rw.Write(jsonPlRe)
+	r := bytes.NewReader(b)
+	resp, err := client.Post(iport.to_url("bid_request"), "application/json", r)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		dec := json.NewDecoder(resp.Body)
+		dec.DisallowUnknownFields()
+		jsonRequest := bidResponse{}
+		err := dec.Decode(&jsonRequest)
+		if err != nil {
+			fmt.Println("Error decode:", err)
+			panic(4)
+		}
+		respChan <- jsonRequest
+	case 204:
+		break
+	default:
+		fmt.Println(resp.StatusCode, "фигня какая-то")
+	}
 }
 
 func prepareBidRequest(pr *placementsRequest) bidRequest {
