@@ -22,8 +22,10 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func main() {
 	port, advertisingPartners := flagsParse()
+
 	http.HandleFunc("/placements/request", NewHandleFunc(advertisingPartners))
 	err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
+
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
@@ -41,6 +43,7 @@ func flagsParse() (*int, *[]IPORT) {
 		os.Exit(2)
 	}
 	advertisingPartners := parseAdvertisingPartners(advertisingPartnersSlice)
+
 	return port_ref, advertisingPartners
 }
 
@@ -49,52 +52,70 @@ func parseAdvertisingPartners(advertisingPartnersSlice *[]string) *[]IPORT {
 	advertisingPartners := make([]IPORT, 0, 10)
 	for _, apString := range *advertisingPartnersSlice {
 		apSplitIpPort := strings.Split(apString, ":")
-		p, err := strconv.ParseUint(strings.Trim(apSplitIpPort[1], " "), 10, 64)
-		if err != nil || p < 1 || p > 65535 {
+		apPort, err := strconv.ParseUint(strings.Trim(apSplitIpPort[1], " "), 10, 64)
+		if err != nil || apPort < 1 || apPort > 65535 {
 			fmt.Println("port не явлется числом от 1 до 65535: ", apString)
 			os.Exit(3)
 		}
-		apPort := uint16(p)
 		apParsedIp := net.ParseIP(strings.Trim(apSplitIpPort[0], " "))
 		if apParsedIp == nil {
 			fmt.Println("Неверный ip", apSplitIpPort[0])
 			os.Exit(3)
 		}
-		advertisingPartners = append(advertisingPartners, IPORT{apParsedIp, apPort})
-		if len(advertisingPartners) > 10 {
-			fmt.Println("Рекламных партнёров больше 10")
-		}
-		if len(advertisingPartners) < 1 {
-			fmt.Println("Рекламных партнёров меньше 1")
-			os.Exit(3)
-		}
+		advertisingPartners = append(advertisingPartners, IPORT{apParsedIp, uint16(apPort)})
+	}
+	if len(advertisingPartners) > 10 {
+		fmt.Println("Рекламных партнёров больше 10")
+	}
+	if len(advertisingPartners) < 1 {
+		fmt.Println("Рекламных партнёров меньше 1")
+		os.Exit(3)
 	}
 	return &advertisingPartners
 }
 
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
-		jsonRequest, err := unmarshalPlacementRequest(req, rw)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusBadRequest)
-			log.Println("WRONG_SCHEMA")
-			return
-		}
-		err = newFunction(jsonRequest, rw)
+		jsonRequest, err := unmarshalAndCheckPlacementRequest(req, rw)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusBadRequest)
 			log.Println(err.Error())
 			return
 		}
-
-		requestAdvertisingPartners(rw, ap, &jsonRequest)
+		respChan, bidReq := requestAdvertisingPartners(rw, ap, &jsonRequest)
+		plRe := prepareBidResponse(respChan, bidReq, &jsonRequest)
+		placementResponse(plRe, rw)
 	}
 }
 
-func newFunction(jsonRequest placementsRequest, rw http.ResponseWriter) error {
+func unmarshalAndCheckPlacementRequest(req *http.Request, rw http.ResponseWriter) (placementsRequest, err) {
+	jsonRequest, err := unmarshalPlacementRequest(req, rw)
+	if err != nil {
+		return placementsRequest{}, errors.New("WRONG_SCHEMA")
+	}
+	err = checkJson(jsonRequest, rw)
+	if err != nil {
+		return placementsRequest{}, err
+	}
+	return jsonRequest, nil
+}
+
+func checkJson(jsonRequest placementsRequest, rw http.ResponseWriter) error {
 	if jsonRequest.Id == "**not_exist**" {
 		return errors.New("(WRONG_SCHEMA) Нет поля 'Id' в JSON")
 	}
+	err := checkContext(jsonRequest)
+	if err != nil {
+		return err
+	}
+	err = checkTiles(jsonRequest)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkContext(jsonRequest placementsRequest) error {
 	if jsonRequest.Context == (context{
 		Ip:        "**not_exist**",
 		UserAgent: "**not_exist**",
@@ -107,7 +128,10 @@ func newFunction(jsonRequest placementsRequest, rw http.ResponseWriter) error {
 	if jsonRequest.Context.UserAgent == "" {
 		return errors.New("(EMPTY_FIELD) Нет поля 'User_agent' в Context")
 	}
+	return nil
+}
 
+func checkTiles(jsonRequest placementsRequest) error {
 	for _, tile := range jsonRequest.Tiles {
 		if tile.Id == 0 {
 			return errors.New("(EMPTY_FIELD) Нет поля 'Id' в Tile")
@@ -119,7 +143,6 @@ func newFunction(jsonRequest placementsRequest, rw http.ResponseWriter) error {
 			return errors.New("(EMPTY_FIELD) Нет поля 'Width' в Tile")
 		}
 	}
-
 	if len(jsonRequest.Tiles) == 0 {
 		return errors.New("(EMPTY_TILES) Отстуствуют tiles")
 	}
@@ -145,7 +168,7 @@ func unmarshalPlacementRequest(req *http.Request, rw http.ResponseWriter) (place
 	return jsonRequest, nil
 }
 
-func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) {
+func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) (*chan bidResponse, *bidRequest) {
 	bidReq := prepareBidRequest(pr)
 
 	respChan := make(chan bidResponse, 20)
@@ -158,21 +181,21 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 	apWG.Wait()
 	close(respChan)
 
-	placementResponse(&respChan, bidReq, pr, rw)
+	return &respChan, &bidReq
+	// placementResponse(&respChan, bidReq, pr, rw)
 }
 
-func placementResponse(respChan *chan bidResponse, bidReq bidRequest, pr *placementsRequest, rw http.ResponseWriter) {
-	plRe := prepareBidResponse(respChan, &bidReq, pr)
-
+func placementResponse(plRe *placementsResponse, rw http.ResponseWriter) {
 	jsonPlRe, err := json.Marshal(plRe)
 	if err != nil {
 		log.Println("Error marshal:", err)
+		return
 	}
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Write(jsonPlRe)
 }
 
-func prepareBidResponse(respChan *chan bidResponse, bidReq *bidRequest, pr *placementsRequest) placementsResponse {
+func prepareBidResponse(respChan *chan bidResponse, bidReq *bidRequest, pr *placementsRequest) *placementsResponse {
 	impBidResponses := make(map[uint]impBidResponse)
 	for bidResp := range *respChan {
 		for _, imp := range bidResp.Imp {
@@ -198,7 +221,7 @@ func prepareBidResponse(respChan *chan bidResponse, bidReq *bidRequest, pr *plac
 		}
 		plRe.Imp = append(plRe.Imp, impResp)
 	}
-	return plRe
+	return &plRe
 }
 
 // TODO shouldbereturn
