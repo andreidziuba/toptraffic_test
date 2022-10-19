@@ -151,16 +151,8 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 }
 
 func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) {
-	bidReq := bidRequest{Id: pr.Id, Context: pr.Context}
-
-	for _, tiles := range pr.Tiles {
-		ir := impRequest{
-			Id:        tiles.Id,
-			Minwidth:  tiles.Width,
-			Minheight: uint(math.Floor(float64(tiles.Width) * tiles.Ratio)),
-		}
-		bidReq.Imp = append(bidReq.Imp, ir)
-	}
+	bidReq := prepareBidRequest(pr)
+	
 	respChan := make(chan bidResponse, 20)
 	client := &http.Client{Timeout: 200 * time.Millisecond}
 	var apWG sync.WaitGroup
@@ -232,6 +224,20 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 	}
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Write(jsonPlRe)
+}
+
+func prepareBidRequest(pr *placementsRequest) bidRequest {
+	bidReq := bidRequest{Id: pr.Id, Context: pr.Context}
+
+	for _, tiles := range pr.Tiles {
+		ir := impRequest{
+			Id:        tiles.Id,
+			Minwidth:  tiles.Width,
+			Minheight: uint(math.Floor(float64(tiles.Width) * tiles.Ratio)),
+		}
+		bidReq.Imp = append(bidReq.Imp, ir)
+	}
+	return bidReq
 }
 
 //	{
