@@ -2,16 +2,20 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/andreidziuba/toptraffic_test/cmd/ssp/components"
+	. "github.com/andreidziuba/toptraffic_test/pkg/structures"
 )
 
 func TestHandler(t *testing.T) {
-	r := placementsRequest{
+	r := PlacementsRequest{
 		Id: "780",
-		Tiles: []tiles{
+		Tiles: []Tiles{
 			{
 				Id:    15,
 				Width: 100,
@@ -22,7 +26,7 @@ func TestHandler(t *testing.T) {
 				Width: 110,
 				Ratio: 1.2,
 			}},
-		Context: context{
+		Context: Context{
 			Ip:        "192.168.10.10",
 			UserAgent: "diospiros",
 		},
@@ -37,13 +41,13 @@ func TestHandler(t *testing.T) {
 	ap := make([]IPORT, 0)
 	ap = append(ap, IPORT{
 		IP:   []byte{127, 0, 0, 1},
-		port: 8000,
+		Port: 8000,
 	})
 	ap = append(ap, IPORT{
 		IP:   []byte{127, 0, 0, 1},
-		port: 8001,
+		Port: 8001,
 	})
-	handler := http.HandlerFunc(NewHandleFunc(&ap))
+	handler := http.HandlerFunc(components.NewHandleFunc(&ap))
 
 	handler.ServeHTTP(rr, req)
 	fmt.Println(rr.Body)
