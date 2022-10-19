@@ -74,80 +74,75 @@ func parseAdvertisingPartners(advertisingPartnersSlice *[]string) *[]IPORT {
 
 func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
-		dec := json.NewDecoder(req.Body)
-		defer req.Body.Close()
-		dec.DisallowUnknownFields()
-		jsonRequest := placementsRequest{
-			Id:    "**not_exist**",
-			Tiles: []tiles{},
-			Context: context{
-				Ip:        "**not_exist**",
-				UserAgent: "**not_exist**",
-			},
-		}
-		err := dec.Decode(&jsonRequest)
+		jsonRequest, err := unmarshalPlacementRequest(req, rw)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusBadRequest)
 			log.Println("WRONG_SCHEMA")
 			return
 		}
-		if jsonRequest.Id == "**not_exist**" {
-			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Id' в JSON", http.StatusBadRequest)
-			log.Println("(WRONG_SCHEMA) Нет поля 'Id' в JSON")
+		err = newFunction(jsonRequest, rw)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			log.Println(err.Error())
 			return
 		}
-		if jsonRequest.Context == (context{
-			Ip:        "**not_exist**",
-			UserAgent: "**not_exist**",
-		}) {
-			http.Error(rw, "(WRONG_SCHEMA) Нет поля 'Context' в JSON", http.StatusBadRequest)
-			log.Println("(WRONG_SCHEMA) Нет поля 'Context' в JSON")
-			return
-		}
-		if jsonRequest.Context.Ip == "" {
-			http.Error(rw, "(EMPTY_FIELD) Нет поля 'ip' в Context", http.StatusBadRequest)
-			log.Println("(EMPTY_FIELD) Нет поля 'ip' в Context")
-			return
-		}
-		if jsonRequest.Context.UserAgent == "" {
-			http.Error(rw, "(EMPTY_FIELD) Нет поля 'User_agent' в Context", http.StatusBadRequest)
-			log.Println("(EMPTY_FIELD) Нет поля 'User_agent' в Context")
-			return
-		}
-
-		// TODO надо сделать проверку полей в Context и Tiles
-		// сделать свои поля по умолчанию для анмаршалинга и потом проверять на дефолтные значения.
-		for _, tile := range jsonRequest.Tiles {
-			if tile.Id == 0 {
-				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Id' в Tile", http.StatusBadRequest)
-				log.Println("(EMPTY_FIELD) Нет поля 'Id' в Tile")
-				return
-			}
-			if tile.Ratio == 0 {
-				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Ratio' в Tile", http.StatusBadRequest)
-				log.Println("(EMPTY_FIELD) Нет поля 'Ratio' в Tile")
-				return
-			}
-			if tile.Width == 0 {
-				http.Error(rw, "(EMPTY_FIELD) Нет поля 'Width' в Tile", http.StatusBadRequest)
-				log.Println("(EMPTY_FIELD) Нет поля 'Width' в Tile")
-				return
-			}
-		}
-
-		if len(jsonRequest.Tiles) == 0 {
-			http.Error(rw, "(EMPTY_TILES) Отстуствуют tiles", http.StatusBadRequest)
-			log.Println("(EMPTY_TILES) Отстуствуют tiles")
-			return
-		}
-
-		// if dec.More() {
-		// 	http.Error(rw, "Лишняя информация после JSON", http.StatusBadRequest)
-		// 	return
-		// }
 
 		requestAdvertisingPartners(rw, ap, &jsonRequest)
 	}
+}
+
+func newFunction(jsonRequest placementsRequest, rw http.ResponseWriter) error {
+	if jsonRequest.Id == "**not_exist**" {
+		return errors.New("(WRONG_SCHEMA) Нет поля 'Id' в JSON")
+	}
+	if jsonRequest.Context == (context{
+		Ip:        "**not_exist**",
+		UserAgent: "**not_exist**",
+	}) {
+		return errors.New("(WRONG_SCHEMA) Нет поля 'Context' в JSON")
+	}
+	if jsonRequest.Context.Ip == "" {
+		return errors.New("(EMPTY_FIELD) Нет поля 'ip' в Context")
+	}
+	if jsonRequest.Context.UserAgent == "" {
+		return errors.New("(EMPTY_FIELD) Нет поля 'User_agent' в Context")
+	}
+
+	for _, tile := range jsonRequest.Tiles {
+		if tile.Id == 0 {
+			return errors.New("(EMPTY_FIELD) Нет поля 'Id' в Tile")
+		}
+		if tile.Ratio == 0 {
+			return errors.New("(EMPTY_FIELD) Нет поля 'Ratio' в Tile")
+		}
+		if tile.Width == 0 {
+			return errors.New("(EMPTY_FIELD) Нет поля 'Width' в Tile")
+		}
+	}
+
+	if len(jsonRequest.Tiles) == 0 {
+		return errors.New("(EMPTY_TILES) Отстуствуют tiles")
+	}
+	return nil
+}
+
+func unmarshalPlacementRequest(req *http.Request, rw http.ResponseWriter) (placementsRequest, error) {
+	dec := json.NewDecoder(req.Body)
+	defer req.Body.Close()
+	dec.DisallowUnknownFields()
+	jsonRequest := placementsRequest{
+		Id:    "**not_exist**",
+		Tiles: []tiles{},
+		Context: context{
+			Ip:        "**not_exist**",
+			UserAgent: "**not_exist**",
+		},
+	}
+	err := dec.Decode(&jsonRequest)
+	if err != nil {
+		return placementsRequest{}, err
+	}
+	return jsonRequest, nil
 }
 
 func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]IPORT, pr *placementsRequest) {
@@ -206,6 +201,7 @@ func prepareBidResponse(respChan *chan bidResponse, bidReq *bidRequest, pr *plac
 	return plRe
 }
 
+// TODO shouldbereturn
 func requestAdvertisingPartner(apWG *sync.WaitGroup, bidReq bidRequest, client *http.Client, respChan chan bidResponse, iport IPORT) {
 	defer apWG.Done()
 	b, err := json.Marshal(bidReq)
