@@ -88,7 +88,7 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func unmarshalAndCheckPlacementRequest(req *http.Request, rw http.ResponseWriter) (placementsRequest, err) {
+func unmarshalAndCheckPlacementRequest(req *http.Request, rw http.ResponseWriter) (placementsRequest, error) {
 	jsonRequest, err := unmarshalPlacementRequest(req, rw)
 	if err != nil {
 		return placementsRequest{}, errors.New("WRONG_SCHEMA")
