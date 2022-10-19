@@ -82,8 +82,11 @@ func NewHandleFunc(ap *[]IPORT) func(http.ResponseWriter, *http.Request) {
 			log.Println(err.Error())
 			return
 		}
+		// опрашиваем рекламных партнёров
 		respChan, bidReq := requestAdvertisingPartners(rw, ap, &jsonRequest)
+		// подготавливаем ответ рекламным площадкам
 		plRe := prepareBidResponse(respChan, bidReq, &jsonRequest)
+		// отвечаем рекламным площадкам
 		placementResponse(plRe, rw)
 	}
 }
@@ -182,7 +185,6 @@ func requestAdvertisingPartners(rw http.ResponseWriter, advertisingPartners *[]I
 	close(respChan)
 
 	return &respChan, &bidReq
-	// placementResponse(&respChan, bidReq, pr, rw)
 }
 
 func placementResponse(plRe *placementsResponse, rw http.ResponseWriter) {
