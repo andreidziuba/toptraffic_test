@@ -35,7 +35,7 @@ func prepareBidRequest(pr *PlacementsRequest) BidRequest {
 	bidReq := BidRequest{Id: pr.Id, Context: pr.Context}
 
 	for _, tiles := range pr.Tiles {
-		ir := ImpRequest{
+		ir := ImpBidRequest{
 			Id:        tiles.Id,
 			Minwidth:  tiles.Width,
 			Minheight: uint(math.Floor(float64(tiles.Width) * tiles.Ratio)),

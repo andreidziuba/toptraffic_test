@@ -50,12 +50,12 @@ type Context struct {
 //		}
 //	}
 type BidRequest struct {
-	Id      string       `json:"id"`
-	Imp     []ImpRequest `json:"imp"`
-	Context Context      `json:"context"`
+	Id      string          `json:"id"`
+	Imp     []ImpBidRequest `json:"imp"`
+	Context Context         `json:"context"`
 }
 
-type ImpRequest struct {
+type ImpBidRequest struct {
 	Id        uint `json:"id"`
 	Minwidth  uint `json:"minwidth"`
 	Minheight uint `json:"minheight"`
